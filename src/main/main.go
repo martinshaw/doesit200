@@ -6,88 +6,12 @@ import (
 	"slices"
 	"time"
 
-	playwright "github.com/playwright-community/playwright-go"
+	"doesit200/src/browser"
+
+	"github.com/playwright-community/playwright-go"
+
+	"doesit200/src/config"
 )
-
-// func promptForEnvironment() (string, uint16, uint8, []string, error) {
-// 	var url string
-// 	var sleep uint16
-// 	var depth uint8
-// 	var includeDomainWildcards []string
-
-// 	fmt.Print("Enter select the crawler config (see config.json): ")
-
-// 	// read from config.json
-// 	var configFile string
-// 	if _, err := fmt.Scanln(&configFile); err != nil {
-// 		return "", 0, 0, nil, fmt.Errorf("could not read config file: %w", err)
-// 	}
-
-// 	// open config.json
-// 	file, err := os.Open(configFile)
-// 	if err != nil {
-// 		return "", 0, 0, nil, fmt.Errorf("could not open config file: %w", err)
-// 	}
-// 	defer file.Close()
-
-// 	// decode config.json as an array of configurations
-// 	var configs []struct {
-// 		URL                    string   `json:"url"`
-// 		Sleep                  uint16   `json:"sleep"`
-// 		Depth                  uint8    `json:"depth"`
-// 		IncludeDomainWildcards []string `json:"include_domain_wildcards"`
-// 	}
-// 	if err := json.NewDecoder(file).Decode(&configs); err != nil {
-// 		return "", 0, 0, nil, fmt.Errorf("could not decode config file: %w", err)
-// 	}
-
-// 	// List available configurations with index which can be selected by input
-// 	for i, config := range configs {
-// 		fmt.Printf("%d: URL: %s, Sleep: %d seconds, Depth: %d\n", i+1, config.URL, config.Sleep, config.Depth)
-// 	}
-// 	fmt.Print("Select a configuration by number: ")
-// 	var choice int
-// 	if _, err := fmt.Scanln(&choice); err != nil {
-// 		return "", 0, 0, nil, fmt.Errorf("could not read choice: %w", err)
-// 	}
-
-// 	if choice < 1 || choice > len(configs) {
-// 		return "", 0, 0, nil, fmt.Errorf("invalid choice: %d", choice)
-// 	}
-
-// 	// Get the selected configuration
-// 	selectedConfig := configs[choice-1]
-// 	url = selectedConfig.URL
-// 	sleep = selectedConfig.Sleep
-// 	depth = selectedConfig.Depth
-// 	includeDomainWildcards = selectedConfig.IncludeDomainWildcards
-
-// 	return url, sleep, depth, includeDomainWildcards, nil
-// }
-
-func promptForInputs() (string, uint16, uint8, []string, error) {
-	var url string
-	var sleep uint16
-	var depth uint8
-	var includeDomainWildcards []string
-
-	fmt.Print("Enter URL to be scanned: ")
-	if _, err := fmt.Scanln(&url); err != nil {
-		return "", 0, 0, nil, fmt.Errorf("could not read URL: %w", err)
-	}
-
-	fmt.Print("Enter sleep duration between navigation in seconds (default 15): ")
-	if _, err := fmt.Scanln(&sleep); err != nil {
-		sleep = 15 // default sleep duration
-	}
-
-	fmt.Print("Enter page depth (default 1): ")
-	if _, err := fmt.Scanln(&depth); err != nil {
-		depth = 1 // default depth
-	}
-
-	return url, sleep, depth, includeDomainWildcards, nil
-}
 
 func addToScannedUrlsList(scannedUrlsList *[]string, url string) {
 	if url != "" && !slices.Contains(*scannedUrlsList, url) {
@@ -96,19 +20,19 @@ func addToScannedUrlsList(scannedUrlsList *[]string, url string) {
 }
 
 func addNetworkEventListeners(
-	page *playwright.Page,
+	browserInstance *browser.Browser,
 	networkRequestsList *[]string,
 	networkResponsesList *[]string,
 	networkResponseStatusesList *map[string]uint16,
 ) {
-	(*page).On("request", func(request playwright.Request) {
+	(*browserInstance.GetPage()).On("request", func(request playwright.Request) {
 		// if request.Method() == "GET" || request.Method() == "POST" {
 		if request.URL() != "" && !slices.Contains(*networkRequestsList, request.URL()) {
 			*networkRequestsList = append(*networkRequestsList, request.URL())
 		}
 		// }
 	})
-	(*page).On("response", func(response playwright.Response) {
+	(*browserInstance.GetPage()).On("response", func(response playwright.Response) {
 		if response.URL() != "" && !slices.Contains(*networkResponsesList, response.URL()) {
 			*networkResponsesList = append(*networkResponsesList, response.URL())
 			(*networkResponseStatusesList)[response.URL()] = uint16(response.Status())
@@ -116,91 +40,15 @@ func addNetworkEventListeners(
 	})
 }
 
-func launchBrowserAndPage() (
-	*playwright.Playwright,
-	*playwright.Browser,
-	*playwright.Page,
-	error,
-) {
-	if err := playwright.Install(); err != nil {
-		log.Fatalf("could not install playwright: %v", err)
-	}
-
-	pw, err := playwright.Run()
-	if err != nil {
-		return pw, nil, nil, fmt.Errorf("could not start playwright: %w", err)
-	}
-
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(true),
-	})
-	if err != nil {
-		return pw, nil, nil, fmt.Errorf("could not launch browser: %w", err)
-	}
-
-	page, err := browser.NewPage()
-	if err != nil {
-		return pw, nil, nil, fmt.Errorf("could not create page: %w", err)
-	}
-
-	return pw, &browser, &page, nil
-}
-
-func onExit(
-	pw *playwright.Playwright,
-	browser *playwright.Browser,
-	page *playwright.Page,
-) {
-	fmt.Println("Finished Does it 200 ?")
-	fmt.Println("Exiting...")
-
-	if page != nil {
-		if err := (*page).Close(); err != nil {
-			log.Printf("could not close page: %v", err)
-		}
-	}
-	if browser != nil {
-		if err := (*browser).Close(); err != nil {
-			log.Printf("could not close browser: %v", err)
-		}
-	}
-	if pw != nil {
-		if err := (*pw).Stop(); err != nil {
-			log.Printf("could not stop Playwright: %v", err)
-		}
-	}
-}
-
-func launchUrlInPage(
-	url string,
-	page *playwright.Page,
-) error {
-	if _, err := (*page).Goto(url); err != nil {
-		return fmt.Errorf("could not goto %s: %w", url, err)
-	}
-
-	// wait for page to load
-	if err := (*page).WaitForLoadState(); err != nil {
-		return fmt.Errorf("could not wait for load state for %s: %w", url, err)
-	}
-
-	fmt.Printf("Launched URL: %s\n", url)
-
-	return nil
-}
-
 func startTree(
 	currentUrls []string,
 	currentDepth uint8,
-	sleepAmount *uint16,
-	maxDepth *uint8,
-	pw *playwright.Playwright,
-	page *playwright.Page,
+	browserInstance *browser.Browser,
 	scannedUrlsList *[]string,
 	networkRequestsList *[]string,
 	networkResponsesList *[]string,
 	networkResponseStatusesList *map[string]uint16,
-	includeDomainWildcards *[]string,
+	config *config.Config,
 ) error {
 	fmt.Println("Starting tree...")
 
@@ -217,21 +65,21 @@ func startTree(
 
 		*scannedUrlsList = append(*scannedUrlsList, currentUrl)
 
-		if err := launchUrlInPage(currentUrl, page); err != nil {
+		if _, err := browserInstance.LaunchUrlInPage(currentUrl); err != nil {
 			log.Printf("Error launching URL or initiated download response %s: %v", currentUrl, err)
 			// If this fails, it is probably a download response instead of a page load.
 			continue
 		}
 
-		if *sleepAmount > 0 {
-			fmt.Printf("Sleeping for %d seconds...\n", *sleepAmount)
-			time.Sleep(time.Duration(*sleepAmount) * time.Second)
+		if config.SleepAmount > 0 {
+			fmt.Printf("Sleeping for %d seconds...\n", config.SleepAmount)
+			time.Sleep(time.Duration(config.SleepAmount) * time.Second)
 		}
 
 		var childLinks []string = make([]string, 0)
 
 		// find all hyperlinks and add href to childLinks
-		links, err := (*page).Locator("a").All()
+		links, err := (*browserInstance.GetPage()).Locator("a").All()
 		if err != nil {
 			log.Printf("could not get links: %v", err)
 			continue
@@ -250,8 +98,8 @@ func startTree(
 			if href[0] == '/' {
 				// pageUrl := (*page).URL()
 				// baseUrl = pageUrl
-				(*page).WaitForURL("**/*")
-				baseUrl, err := (*page).Evaluate("() => window.location.origin")
+				(*browserInstance.GetPage()).WaitForURL("**/*")
+				baseUrl, err := (*browserInstance.GetPage()).Evaluate("() => window.location.origin")
 				if err != nil {
 					log.Printf("could not get base URL: %v", err)
 					continue
@@ -283,21 +131,18 @@ func startTree(
 
 		fmt.Printf("Current depth is %d\n", currentDepth)
 
-		if currentDepth <= *maxDepth {
+		if currentDepth <= *&config.MaxDepth {
 			// TODO: Find links and iterate next level of tree using startTree
 			if finish := startTree(
 				// TODO: Might need to make this a pointer ? IDK
 				childLinks,
 				currentDepth+1,
-				sleepAmount,
-				maxDepth,
-				pw,
-				page,
+				browserInstance,
 				scannedUrlsList,
 				networkRequestsList,
 				networkResponsesList,
 				networkResponseStatusesList,
-				includeDomainWildcards,
+				config,
 			); finish != nil {
 				return finish
 			}
@@ -322,46 +167,41 @@ func filterNetworkResponseStatusesListForNon200(
 func main() {
 	fmt.Println("Starting Does it 200 ?")
 
-	pw, browser, page, err := launchBrowserAndPage()
+	browserInstance, err := browser.NewBrowser()
 	if err != nil {
-		log.Fatalf("could not launch browser and page: %v", err)
+		log.Fatalf("could not create browser: %v", err)
 	}
-
-	defer onExit(pw, browser, page)
+	defer browserInstance.Close()
 
 	var scannedUrlsList []string = make([]string, 0)
 	var networkRequestsList []string = make([]string, 0)
 	var networkResponsesList []string = make([]string, 0)
 	var networkResponseStatusesList map[string]uint16 = make(map[string]uint16)
 
-	addNetworkEventListeners(page, &networkRequestsList, &networkResponsesList, &networkResponseStatusesList)
+	addNetworkEventListeners(browserInstance, &networkRequestsList, &networkResponsesList, &networkResponseStatusesList)
 
-	// rootUrl, sleepAmount, maxDepth, includeDomainWildcards, err := promptForEnvironment()
 	// TODO: Warning!!! Before using this with more than 1 / 2 max depth, we need to implement safeguard includeDomainWildcards so that external domains are not crawled
-	rootUrl, sleepAmount, maxDepth, includeDomainWildcards, err := promptForInputs()
+	config, err := config.GetConfigFromInputs()
 	if err != nil {
-		log.Fatalf("could not prompt for inputs: %v", err)
+		log.Fatalf("could not get config from inputs: %v", err)
 	}
 
-	fmt.Printf("URL: %s, Sleep: %d seconds, Depth: %d\n", rootUrl, sleepAmount, maxDepth)
+	fmt.Printf("URL: %s, Sleep: %d seconds, Depth: %d\n", config.URL, config.SleepAmount, config.MaxDepth)
 
 	var currentDepth uint8 = 0
-	var currentUrl string = rootUrl
+	var currentUrl string = config.URL
 
 	log.Printf("Tree started")
 
 	if finish := startTree(
 		[]string{currentUrl},
 		currentDepth,
-		&sleepAmount,
-		&maxDepth,
-		pw,
-		page,
+		browserInstance,
 		&scannedUrlsList,
 		&networkRequestsList,
 		&networkResponsesList,
 		&networkResponseStatusesList,
-		&includeDomainWildcards,
+		config,
 	); finish != nil {
 		log.Printf("%v", finish.Error())
 	}
